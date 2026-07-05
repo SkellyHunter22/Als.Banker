@@ -1,10 +1,11 @@
 name: AlsBanker
-version: 2.0
+version: 0.9a
 main: com.alexander.alsbanker.AlsBanker
 api-version: 1.20
-author: Alexander
+author: SkellyHunter22
 description: Full loan scheduler replacement for EcoXpert with Discord integration.
 softdepend: [Vault, PlaceholderAPI]
+loadbefore: [EcoXpert]
 
 commands:
   loanscheduler:
@@ -22,6 +23,16 @@ commands:
 
   unlinkdiscord:
     description: Unlink your Discord account
+    permission: alsbanker.user
+
+  savings:
+    description: Manage your savings account
+    usage: "/savings <deposit|withdraw|info> [amount]"
+    permission: alsbanker.user
+
+  stocks:
+    description: Buy and sell stocks
+    usage: "/stocks <list|buy|sell|portfolio> [symbol] [shares]"
     permission: alsbanker.user
 
 permissions:

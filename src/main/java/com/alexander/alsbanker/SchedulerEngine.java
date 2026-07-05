@@ -23,22 +23,87 @@ public class SchedulerEngine {
         long start = System.currentTimeMillis();
         int processed = 0;
 
-        try (Connection conn = LoanDataService.openConnection();
-             PreparedStatement overdueStmt = conn.prepareStatement(
-                     "SELECT s.id, s.loan_id, l.player_uuid, l.outstanding, l.principal, l.interest_rate, " +
-                     "s.amount_due, s.paid_amount " +
-                     "FROM ecoxpert_loan_schedules s " +
-                     "JOIN ecoxpert_loans l ON l.id = s.loan_id " +
+        try (Connection conn = LoanDataService.openConnection()) {
+            processed += chargeLateFees(conn);
+            processed += chargeDailyPenalties(conn);
+        } catch (Exception e) {
+            AlsBanker.get().getLogger().severe("Scheduler error: " + e.getMessage());
+        }
+
+        try {
+            processed += creditSavingsInterest();
+        } catch (Exception e) {
+            AlsBanker.get().getLogger().severe("Savings interest error: " + e.getMessage());
+        }
+
+        long end = System.currentTimeMillis();
+        AlsBanker.get().getLogger().info(
+                "Cycle completed in " + (end - start) + "ms, " + processed + " overdue schedule(s) processed.");
+    }
+
+    /**
+     * One-time flat fee charged the moment a schedule first misses its due date.
+     */
+    private static int chargeLateFees(Connection conn) throws Exception {
+        double lateFeeRate = AlsBanker.get().getConfig().getDouble("late_fee.rate", 0.10);
+        double lateFeeMin = AlsBanker.get().getConfig().getDouble("late_fee.min_amount", 0.0);
+        int processed = 0;
+
+        try (PreparedStatement newlyOverdue = conn.prepareStatement(
+                     "SELECT s.id, s.loan_id, l.player_uuid, s.amount_due " +
+                     "FROM ecoxpert_loan_schedules s JOIN ecoxpert_loans l ON l.id = s.loan_id " +
                      "WHERE s.status = 'PENDING' AND s.due_date < CURDATE()");
              PreparedStatement updateLoan = conn.prepareStatement(
                      "UPDATE ecoxpert_loans SET outstanding = outstanding + ? WHERE id = ?");
              PreparedStatement markOverdue = conn.prepareStatement(
-                     "UPDATE ecoxpert_loan_schedules SET status = 'OVERDUE' WHERE id = ?")) {
+                     "UPDATE ecoxpert_loan_schedules SET status = 'OVERDUE', late_fee_charged = TRUE, " +
+                     "last_penalized_date = CURDATE() WHERE id = ?")) {
 
-            double penaltyRate = AlsBanker.get().getConfig().getDouble("penalty_rate");
-            double penaltyCapFraction = AlsBanker.get().getConfig().getDouble("penalty_cap_fraction", 1.0);
+            try (ResultSet rs = newlyOverdue.executeQuery()) {
+                while (rs.next()) {
+                    long loanId = rs.getLong("loan_id");
+                    long scheduleId = rs.getLong("id");
+                    String uuid = rs.getString("player_uuid");
+                    double amountDue = rs.getDouble("amount_due");
 
-            try (ResultSet rs = overdueStmt.executeQuery()) {
+                    double lateFee = Math.max(lateFeeMin, amountDue * lateFeeRate);
+
+                    updateLoan.setDouble(1, lateFee);
+                    updateLoan.setLong(2, loanId);
+                    updateLoan.executeUpdate();
+
+                    markOverdue.setLong(1, scheduleId);
+                    markOverdue.executeUpdate();
+
+                    notifyPlayer(uuid, "You missed a loan payment and were charged a $" +
+                            String.format("%.2f", lateFee) + " late fee.");
+                    processed++;
+                }
+            }
+        }
+
+        return processed;
+    }
+
+    /**
+     * Ongoing interest/penalty applied once per calendar day to schedules that are
+     * still unpaid, for as long as they remain overdue.
+     */
+    private static int chargeDailyPenalties(Connection conn) throws Exception {
+        double penaltyRate = AlsBanker.get().getConfig().getDouble("penalty_rate");
+        double penaltyCapFraction = AlsBanker.get().getConfig().getDouble("penalty_cap_fraction", 1.0);
+        int processed = 0;
+
+        try (PreparedStatement stillOverdue = conn.prepareStatement(
+                     "SELECT s.id, l.id AS loan_id, l.player_uuid, l.outstanding, l.principal, l.interest_rate " +
+                     "FROM ecoxpert_loan_schedules s JOIN ecoxpert_loans l ON l.id = s.loan_id " +
+                     "WHERE s.status = 'OVERDUE' AND (s.last_penalized_date IS NULL OR s.last_penalized_date < CURDATE())");
+             PreparedStatement updateLoan = conn.prepareStatement(
+                     "UPDATE ecoxpert_loans SET outstanding = outstanding + ? WHERE id = ?");
+             PreparedStatement markPenalized = conn.prepareStatement(
+                     "UPDATE ecoxpert_loan_schedules SET last_penalized_date = CURDATE() WHERE id = ?")) {
+
+            try (ResultSet rs = stillOverdue.executeQuery()) {
                 while (rs.next()) {
                     long loanId = rs.getLong("loan_id");
                     long scheduleId = rs.getLong("id");
@@ -62,27 +127,40 @@ public class SchedulerEngine {
                     updateLoan.setLong(2, loanId);
                     updateLoan.executeUpdate();
 
-                    markOverdue.setLong(1, scheduleId);
-                    markOverdue.executeUpdate();
+                    markPenalized.setLong(1, scheduleId);
+                    markPenalized.executeUpdate();
 
-                    notifyPlayer(uuid);
+                    notifyPlayer(uuid, "Your overdue loan accrued $" +
+                            String.format("%.2f", totalIncrease) + " in interest and penalties today.");
                     processed++;
                 }
             }
-
-        } catch (Exception e) {
-            AlsBanker.get().getLogger().severe("Scheduler error: " + e.getMessage());
         }
 
-        long end = System.currentTimeMillis();
-        AlsBanker.get().getLogger().info(
-                "Cycle completed in " + (end - start) + "ms, " + processed + " overdue schedule(s) processed.");
+        return processed;
     }
 
-    private static void notifyPlayer(String uuid) {
-        // Bukkit API (player lookup, command dispatch) must run on the main thread,
-        // but runCycle executes on an async scheduler task.
-        Bukkit.getScheduler().runTask(AlsBanker.get(), () -> LoanEventListener.notifyMinecraft(uuid));
-        DiscordNotifier.dm(uuid, "Your loan is overdue or has incurred interest.");
+    /**
+     * Ongoing interest applied once per calendar day to every savings account with
+     * a positive balance, for as long as it stays deposited.
+     */
+    private static int creditSavingsInterest() throws Exception {
+        double rate = AlsBanker.get().getConfig().getDouble("savings.interest_rate", 0.01);
+
+        return SavingsDataService.applyDailyInterest(rate, (uuid, interest) -> {
+            double newBalance;
+            try {
+                newBalance = SavingsDataService.getBalance(uuid);
+            } catch (Exception e) {
+                newBalance = interest;
+            }
+            TransactionService.record(uuid, "SAVINGS_INTEREST", interest, newBalance,
+                    "Daily savings interest");
+            notifyPlayer(uuid, "Your savings earned $" + String.format("%.2f", interest) + " in interest today.");
+        });
+    }
+
+    private static void notifyPlayer(String uuid, String message) {
+        LoanEventListener.notify(uuid, message);
     }
 }

@@ -4,7 +4,12 @@ import com.alexander.alsbanker.api.AlsBankingAPI;
 import com.alexander.alsbanker.api.BankingAPI;
 import com.alexander.alsbanker.bank.BankGuiManager;
 import org.bukkit.Bukkit;
+import org.bukkit.command.Command;
+import org.bukkit.command.SimpleCommandMap;
 import org.bukkit.plugin.java.JavaPlugin;
+
+import java.lang.reflect.Field;
+import java.util.Map;
 
 public class AlsBanker extends JavaPlugin {
 
@@ -31,6 +36,8 @@ public class AlsBanker extends JavaPlugin {
         DatabaseManager.setup();
         LoanDataService.initializeTables();
         TransactionService.initializeTable();
+        SavingsDataService.initializeTable();
+        StockDataService.initializeTables();
         getLogger().info("Database connected and tables verified.");
 
         // Pull in previously-linked Discord accounts.
@@ -38,18 +45,29 @@ public class AlsBanker extends JavaPlugin {
 
         // GUIs: the in-game "Bank App" menu and the admin panel.
         getServer().getPluginManager().registerEvents(new BankGuiManager(), this);
+        com.alexander.alsbanker.bank.LoanGuiManager.register();
         GuiManager.register();
         getLogger().info("GUIs registered.");
 
         // Player + admin commands.
         getCommand("loanscheduler").setExecutor(new SchedulerCommand());
-        getCommand("loan").setExecutor(new LoanCommand());
+        LoanCommand loanCommand = new LoanCommand();
+        getCommand("loan").setExecutor(loanCommand);
+        getCommand("loan").setTabCompleter(loanCommand);
         getCommand("linkdiscord").setExecutor(new LinkDiscordCommand());
         getCommand("unlinkdiscord").setExecutor(new UnlinkDiscordCommand());
-        getLogger().info("Commands registered: /loanscheduler, /loan, /linkdiscord, /unlinkdiscord.");
+        SavingsCommand savingsCommand = new SavingsCommand();
+        getCommand("savings").setExecutor(savingsCommand);
+        getCommand("savings").setTabCompleter(savingsCommand);
+        StockCommand stockCommand = new StockCommand();
+        getCommand("stocks").setExecutor(stockCommand);
+        getCommand("stocks").setTabCompleter(stockCommand);
+        getLogger().info("Commands registered: /loanscheduler, /loan, /linkdiscord, /unlinkdiscord, /savings, /stocks.");
 
-        // Kick off the recurring job that applies interest/penalties to overdue loans.
+        // Kick off the recurring job that applies interest/penalties to overdue loans,
+        // credits savings interest, and updates stock prices.
         SchedulerEngine.start();
+        StockMarketEngine.start();
         getLogger().info("Overdue-loan scheduler started.");
 
         // Hook PlaceholderAPI only if it's actually installed.
@@ -58,8 +76,35 @@ public class AlsBanker extends JavaPlugin {
             getLogger().info("PlaceholderAPI expansion registered.");
         }
 
+        // EcoXpert registers a "loans" command with a "loan" alias, and Bukkit's command
+        // map arbitration between plugins isn't reliably controllable via plugin.yml
+        // load-order hints alone. Force ownership of the bare /loan slot once every
+        // plugin has finished enabling, so EcoXpert's alias never wins it.
+        Bukkit.getScheduler().runTask(this, this::claimLoanCommand);
+
         AlsBankerFileLogger.log("onEnable() finished successfully");
         printSuccessBanner();
+    }
+
+    private void claimLoanCommand() {
+        try {
+            Field commandMapField = Bukkit.getServer().getClass().getDeclaredField("commandMap");
+            commandMapField.setAccessible(true);
+            SimpleCommandMap commandMap = (SimpleCommandMap) commandMapField.get(Bukkit.getServer());
+
+            Field knownCommandsField = SimpleCommandMap.class.getDeclaredField("knownCommands");
+            knownCommandsField.setAccessible(true);
+            @SuppressWarnings("unchecked")
+            Map<String, Command> knownCommands = (Map<String, Command>) knownCommandsField.get(commandMap);
+
+            Command ours = getCommand("loan");
+            if (ours != null) {
+                knownCommands.put("loan", ours);
+                getLogger().info("Claimed ownership of /loan (overriding any conflicting alias, e.g. EcoXpert's).");
+            }
+        } catch (ReflectiveOperationException | ClassCastException e) {
+            getLogger().warning("Could not force ownership of /loan: " + e.getMessage());
+        }
     }
 
     @Override
