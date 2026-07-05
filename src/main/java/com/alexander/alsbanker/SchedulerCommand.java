@@ -1,5 +1,6 @@
-package com.alexander.ecoloanscheduler;
+package com.alexander.alsbanker;
 
+import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.command.*;
 import org.bukkit.entity.Player;
@@ -18,15 +19,15 @@ public class SchedulerCommand implements CommandExecutor {
         }
 
         if (args[0].equalsIgnoreCase("reload")) {
-            EcoLoanScheduler.get().reloadConfig();
+            AlsBanker.get().reloadConfig();
             DiscordLinkManager.load();
             sender.sendMessage(ChatColor.GREEN + "Reloaded.");
             return true;
         }
 
         if (args[0].equalsIgnoreCase("runnow")) {
-            SchedulerEngine.runCycle();
-            sender.sendMessage(ChatColor.GREEN + "Cycle executed.");
+            sender.sendMessage(ChatColor.GREEN + "Cycle started in background...");
+            Bukkit.getScheduler().runTaskAsynchronously(AlsBanker.get(), SchedulerEngine::runCycle);
             return true;
         }
 

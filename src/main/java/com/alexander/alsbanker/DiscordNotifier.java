@@ -1,4 +1,4 @@
-package com.alexander.ecoloanscheduler;
+package com.alexander.alsbanker;
 
 import org.bukkit.Bukkit;
 
@@ -12,11 +12,11 @@ public class DiscordNotifier {
         if (!DiscordLinkManager.isLinked(uuid)) return;
 
         String discordId = DiscordLinkManager.getDiscordId(uuid);
-        String token = EcoLoanScheduler.get().getConfig().getString("discord_bot_token");
+        String token = AlsBanker.get().getConfig().getString("discord_bot_token");
 
-        if (token == null || token.isEmpty()) return;
+        if (discordId == null || token == null || token.isEmpty()) return;
 
-        Bukkit.getScheduler().runTaskAsynchronously(EcoLoanScheduler.get(), () -> {
+        Bukkit.getScheduler().runTaskAsynchronously(AlsBanker.get(), () -> {
             try {
                 URL url = new URL("https://discord.com/api/v10/users/@me/channels");
                 HttpURLConnection conn = (HttpURLConnection) url.openConnection();
@@ -25,9 +25,15 @@ public class DiscordNotifier {
                 conn.setRequestProperty("Content-Type", "application/json");
                 conn.setDoOutput(true);
 
-                String json = "{\"recipient_id\":\"" + discordId + "\"}";
+                String json = "{\"recipient_id\":\"" + escapeJson(discordId) + "\"}";
                 try (OutputStream os = conn.getOutputStream()) {
                     os.write(json.getBytes());
+                }
+
+                if (conn.getResponseCode() >= 300) {
+                    AlsBanker.get().getLogger().warning(
+                            "Discord DM channel creation failed with HTTP " + conn.getResponseCode());
+                    return;
                 }
 
                 String response = new String(conn.getInputStream().readAllBytes());
@@ -40,12 +46,27 @@ public class DiscordNotifier {
                 msgConn.setRequestProperty("Content-Type", "application/json");
                 msgConn.setDoOutput(true);
 
-                String msgJson = "{\"content\":\"" + message + "\"}";
+                String msgJson = "{\"content\":\"" + escapeJson(message) + "\"}";
                 try (OutputStream os = msgConn.getOutputStream()) {
                     os.write(msgJson.getBytes());
                 }
 
-            } catch (Exception ignored) {}
+                if (msgConn.getResponseCode() >= 300) {
+                    AlsBanker.get().getLogger().warning(
+                            "Discord DM send failed with HTTP " + msgConn.getResponseCode());
+                }
+
+            } catch (Exception e) {
+                AlsBanker.get().getLogger().warning("Discord DM failed: " + e.getMessage());
+            }
         });
+    }
+
+    private static String escapeJson(String value) {
+        return value
+                .replace("\\", "\\\\")
+                .replace("\"", "\\\"")
+                .replace("\n", "\\n")
+                .replace("\r", "\\r");
     }
 }

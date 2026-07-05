@@ -1,4 +1,4 @@
-package com.alexander.ecoloanscheduler;
+package com.alexander.alsbanker;
 
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
@@ -10,7 +10,7 @@ import org.bukkit.event.player.PlayerCommandPreprocessEvent;
 public class LoanEventListener implements Listener {
 
     public static void register() {
-        Bukkit.getPluginManager().registerEvents(new LoanEventListener(), EcoLoanScheduler.get());
+        Bukkit.getPluginManager().registerEvents(new LoanEventListener(), AlsBanker.get());
     }
 
     @EventHandler

@@ -1,4 +1,4 @@
-package com.alexander.ecoloanscheduler;
+package com.alexander.alsbanker;
 
 import org.bukkit.ChatColor;
 import org.bukkit.command.Command;

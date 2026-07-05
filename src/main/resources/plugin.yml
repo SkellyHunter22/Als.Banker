@@ -1,25 +1,26 @@
-name: EcoLoanScheduler
+name: AlsBanker
 version: 2.0
-main: com.alexander.ecoloanscheduler.EcoLoanScheduler
+main: com.alexander.alsbanker.AlsBanker
 api-version: 1.20
 author: Alexander
 description: Full loan scheduler replacement for EcoXpert with Discord integration.
+softdepend: [PlaceholderAPI]
 
 commands:
   loanscheduler:
     description: Admin controls
-    permission: ecoloanscheduler.admin
+    permission: alsbanker.admin
 
   linkdiscord:
     description: Link your Discord account
-    permission: ecoloanscheduler.user
+    permission: alsbanker.user
 
   unlinkdiscord:
     description: Unlink your Discord account
-    permission: ecoloanscheduler.user
+    permission: alsbanker.user
 
 permissions:
-  ecoloanscheduler.admin:
+  alsbanker.admin:
     default: op
-  ecoloanscheduler.user:
+  alsbanker.user:
     default: true
