@@ -11,6 +11,12 @@ penalty_cap_fraction: 0.50
 interest:
   mode: "outstanding" # outstanding | principal | average
 
+loan:
+  max_amount: 5000.0
+  interest_rate: 0.05
+  installments: 4
+  installment_interval_days: 7
+
 discord_webhook: ""
 discord_bot_token: ""
 

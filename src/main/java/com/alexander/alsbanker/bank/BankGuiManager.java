@@ -22,7 +22,7 @@ public class BankGuiManager implements Listener {
                     FloodgateApi.getInstance().isFloodgatePlayer(p.getUniqueId())) {
                 BedrockFormBridge.sendTransferForm(p);
             } else {
-                JavaTargetGUI.openSelector(p);
+                JavaNumpadGUI.openNumpad(p);
             }
         }
     }

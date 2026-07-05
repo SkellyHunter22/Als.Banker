@@ -3,30 +3,16 @@ package com.alexander.alsbanker;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.entity.Player;
-import org.bukkit.event.Listener;
-import org.bukkit.event.EventHandler;
-import org.bukkit.event.player.PlayerCommandPreprocessEvent;
 
-public class LoanEventListener implements Listener {
+public class LoanEventListener {
 
-    public static void register() {
-        Bukkit.getPluginManager().registerEvents(new LoanEventListener(), AlsBanker.get());
-    }
-
-    @EventHandler
-    public void onLoanRequest(PlayerCommandPreprocessEvent e) {
-        if (!e.getMessage().toLowerCase().startsWith("/loan request")) return;
-
-        Player p = e.getPlayer();
+    public static void notifyLoanCreated(Player p) {
         String uuid = p.getUniqueId().toString();
-
         boolean linked = DiscordLinkManager.isLinked(uuid);
 
-        p.sendTitle(
-                ChatColor.GOLD + "Loan Created!",
-                linked ? ChatColor.GREEN + "Discord Linked" : ChatColor.RED + "Use /linkdiscord",
-                10, 70, 20
-        );
+        if (!linked) {
+            p.sendMessage(ChatColor.YELLOW + "Tip: use /linkdiscord to get loan notifications on Discord too.");
+        }
 
         Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "phone_loan_created " + p.getName());
 
