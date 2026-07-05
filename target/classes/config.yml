@@ -1,0 +1,43 @@
+mysql:
+  url: "jdbc:mysql://localhost:3306/ecoxpert_inf"
+  user: "root"
+  password: ""
+
+interval_minutes: 60
+
+# Ongoing daily interest/penalty charged on the outstanding balance for every day a
+# schedule stays unpaid past its due date. Applied at most once per calendar day,
+# no matter how often interval_minutes runs the check.
+penalty_rate: 0.02
+penalty_cap_fraction: 0.50
+
+# One-time flat fee charged the moment an installment first becomes overdue,
+# separate from the ongoing daily penalty above.
+late_fee:
+  rate: 0.10       # fraction of the missed installment's amount_due
+  min_amount: 10.0 # fee is never lower than this, even on tiny installments
+
+interest:
+  mode: "outstanding" # outstanding | principal | average
+
+loan:
+  max_amount: 5000.0
+  interest_rate: 0.05
+  installments: 3
+  installment_interval_days: 3
+
+# Savings account: /savings deposit|withdraw pulls from/pushes to the player's Vault
+# wallet. Interest is credited once per calendar day on whatever is deposited.
+savings:
+  interest_rate: 0.01 # 1% per day
+
+# Virtual stock market: /stocks buy|sell trades against the player's Vault wallet.
+stocks:
+  fluctuation_interval_minutes: 30
+  max_change_percent: 0.05 # each cycle, price moves by up to +/-5%
+  min_price: 0.50
+
+discord_webhook: ""
+discord_bot_token: ""
+
+discord_links: {}
