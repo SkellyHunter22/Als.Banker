@@ -36,8 +36,6 @@ The shaded jar is written to `target/AlsBanker-<version>.jar`. Drop it into your
 | `/loanscheduler reload\|runnow\|gui\|stats` | Admin controls: reload config, force an overdue-loan cycle, open the admin GUI, view server-wide stats | `alsbanker.admin` |
 | `/linkdiscord <discordId>` | Link your Discord account for loan/overdue DMs | `alsbanker.user` |
 | `/unlinkdiscord` | Unlink your Discord account | `alsbanker.user` |
-| `/savings deposit\|withdraw\|info [amount]` | Move money between your Vault balance and your savings account, or check your balance | `alsbanker.user` |
-| `/stocks list\|buy\|sell\|portfolio [symbol] [shares]` | Browse and trade the virtual stock market against your Vault balance | `alsbanker.user` |
 
 ## How loans work
 
@@ -48,22 +46,9 @@ The shaded jar is written to `target/AlsBanker-<version>.jar`. Drop it into your
 2. **Repay** (`/loan pay <amount>`) — withdraws from your Vault balance and pays off installments
    oldest-due-first.
 3. **Overdue handling** — a background cycle (interval set by `interval_minutes`) scans for
-   installments past their due date. The moment an installment first goes overdue it's charged a
-   one-time late fee (`late_fee.rate` of the missed installment, floored at `late_fee.min_amount`).
-   From then on, once per calendar day it accrues interest (`loan.interest_rate`, calculated per
    `interest.mode`: `outstanding`, `principal`, or `average`) plus a capped penalty
    (`penalty_rate` / `penalty_cap_fraction`), and notifies the player in-game and via Discord
    (if linked).
-
-## Savings and stocks
-
-- **Savings** (`/savings deposit|withdraw|info`) — money moved into savings earns
-  `savings.interest_rate` (default 1%) once per calendar day, credited by the same background
-  cycle that handles overdue loans.
-- **Stock market** (`/stocks list|buy|sell|portfolio`) — a `StockMarketEngine` timer
-  (`stocks.fluctuation_interval_minutes`) nudges each stock's price by up to
-  `stocks.max_change_percent` per cycle, never below `stocks.min_price`. Buying/selling trades
-  against the player's Vault balance.
 
 ## Configuration (`config.yml`)
 
@@ -75,12 +60,7 @@ mysql:
 
 interval_minutes: 60        # how often the overdue-loan cycle runs
 
-penalty_rate: 0.02          # ongoing daily penalty applied to overdue installments
 penalty_cap_fraction: 0.50  # penalty is capped at this fraction of outstanding balance
-
-late_fee:
-  rate: 0.10       # one-time fee, as a fraction of the missed installment's amount_due
-  min_amount: 10.0 # fee is never lower than this, even on tiny installments
 
 interest:
   mode: "outstanding"        # outstanding | principal | average
@@ -88,16 +68,6 @@ interest:
 loan:
   max_amount: 5000.0
   interest_rate: 0.05
-  installments: 3
-  installment_interval_days: 3
-
-savings:
-  interest_rate: 0.01 # 1% per day, credited once per calendar day
-
-stocks:
-  fluctuation_interval_minutes: 30
-  max_change_percent: 0.05 # each cycle, price moves by up to +/-5%
-  min_price: 0.50
 
 discord_webhook: ""
 discord_bot_token: ""
@@ -108,8 +78,6 @@ discord_bot_token: ""
 - **Database** (shared MySQL instance, tables auto-created on startup):
   - `ecoxpert_loans`, `ecoxpert_loan_schedules` — loan principal/outstanding and installment schedule
   - `alsbanker_balances` — the standalone ledger backing `BankingAPI.getBalance/withdraw/deposit`
-  - `alsbanker_savings` — savings account balances, credited daily interest by the scheduler
-  - `alsbanker_transactions` — full transaction history (loan requests, payments, deposits, withdrawals, savings interest)
 - **Logs** (`plugins/AlsBanker/logs/`): rotating `launch-1.log` (most recent) through `launch-3.log`,
   rewritten each startup.
 - **Transaction log files** (`plugins/AlsBanker/transactions/`): one human-readable file per day
