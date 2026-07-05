@@ -1,0 +1,17 @@
+mysql:
+  url: "jdbc:mysql://localhost:3306/ecoxpert_inf"
+  user: "root"
+  password: ""
+
+interval_minutes: 60
+
+penalty_rate: 0.01
+penalty_cap_fraction: 0.50
+
+interest:
+  mode: "outstanding" # outstanding | principal | average
+
+discord_webhook: ""
+discord_bot_token: ""
+
+discord_links: {}
