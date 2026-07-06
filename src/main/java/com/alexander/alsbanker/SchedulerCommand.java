@@ -15,6 +15,30 @@ public class SchedulerCommand implements CommandExecutor {
             sender.sendMessage(ChatColor.YELLOW + "/loanscheduler runnow");
             sender.sendMessage(ChatColor.YELLOW + "/loanscheduler gui");
             sender.sendMessage(ChatColor.YELLOW + "/loanscheduler stats");
+            sender.sendMessage(ChatColor.YELLOW + "/loanscheduler testdm [message]");
+            return true;
+        }
+
+        if (args[0].equalsIgnoreCase("testdm")) {
+            if (!(sender instanceof Player)) {
+                sender.sendMessage(ChatColor.RED + "Only players can use testdm (need a linked Discord account).");
+                return true;
+            }
+
+            Player p = (Player) sender;
+            String uuid = p.getUniqueId().toString();
+
+            if (!DiscordLinkManager.isLinked(uuid)) {
+                sender.sendMessage(ChatColor.RED + "You don't have a linked Discord account. Use /linkdiscord <discordID> first.");
+                return true;
+            }
+
+            String message = args.length > 1
+                    ? String.join(" ", java.util.Arrays.copyOfRange(args, 1, args.length))
+                    : "Test message from AlsBanker.";
+
+            DiscordNotifier.dm(uuid, message);
+            sender.sendMessage(ChatColor.GREEN + "Test DM dispatched, check server console for warnings.");
             return true;
         }
 

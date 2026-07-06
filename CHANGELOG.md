@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.9b] - 2026-07-06
+
+### Added
+- `SavingsGuiManager` and `StocksGuiManager`: in-game menus for `/savings` and `/stocks`, opened by default when either command is run with no arguments (or explicitly via the new `gui` subcommand). Deposit/withdraw/list/trade/portfolio logic itself is unchanged — the GUIs drive the same `SavingsCommand`/`StockCommand` methods, now `public` so the GUI classes can call them.
+- `BankingAPI.getSavingsInfo(uuid)` / `getStockPortfolio(uuid)`, plus new `SavingsInfo` and `StockHolding` API DTOs, so companion plugins (e.g. AllyPhone) can render savings balances and stock holdings alongside the existing loan/transaction data.
+- `DiscordGateway`: opens a persistent Discord Gateway websocket connection (built on Java's `java.net.http.WebSocket`, no new dependency) and IDENTIFYs with `discord_bot_token` so the bot actually shows **online** in Discord — previously `DiscordNotifier` only ever made one-off REST calls, which never establishes presence. Connects in `onEnable()`, disconnects in `onDisable()`, and auto-reconnects on close/error.
+- `/loanscheduler testdm [message]` admin command to send a real Discord DM to your own linked account on demand, for verifying `discord_bot_token` and the link/REST path without waiting for a loan/savings/stock event to trigger one.
+
 ## [0.9a] - 2026-07-05
 
 ### Added

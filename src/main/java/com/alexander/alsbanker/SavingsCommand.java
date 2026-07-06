@@ -1,5 +1,6 @@
 package com.alexander.alsbanker;
 
+import com.alexander.alsbanker.bank.SavingsGuiManager;
 import net.milkbowl.vault.economy.Economy;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
@@ -16,7 +17,7 @@ import java.util.List;
 
 public class SavingsCommand implements CommandExecutor, TabCompleter {
 
-    private static final List<String> SUBCOMMANDS = Arrays.asList("deposit", "withdraw", "info");
+    private static final List<String> SUBCOMMANDS = Arrays.asList("deposit", "withdraw", "info", "gui");
     private static final List<String> AMOUNT_SUGGESTIONS = Arrays.asList("100", "250", "500", "1000");
 
     @Override
@@ -28,9 +29,7 @@ public class SavingsCommand implements CommandExecutor, TabCompleter {
         Player p = (Player) sender;
 
         if (args.length == 0) {
-            p.sendMessage(ChatColor.YELLOW + "/savings deposit <amount>");
-            p.sendMessage(ChatColor.YELLOW + "/savings withdraw <amount>");
-            p.sendMessage(ChatColor.YELLOW + "/savings info");
+            SavingsGuiManager.openMenu(p);
             return true;
         }
 
@@ -53,6 +52,9 @@ public class SavingsCommand implements CommandExecutor, TabCompleter {
                 return true;
             case "info":
                 info(p);
+                return true;
+            case "gui":
+                SavingsGuiManager.openMenu(p);
                 return true;
             default:
                 p.sendMessage(ChatColor.RED + "Unknown /savings subcommand.");
@@ -79,7 +81,7 @@ public class SavingsCommand implements CommandExecutor, TabCompleter {
         return new ArrayList<>();
     }
 
-    private static void deposit(Player p, double amount) {
+    public static void deposit(Player p, double amount) {
         Economy econ = VaultEconomy.get();
         if (econ == null) {
             p.sendMessage(ChatColor.RED + "Economy is unavailable; cannot process deposit right now.");
@@ -110,7 +112,7 @@ public class SavingsCommand implements CommandExecutor, TabCompleter {
         });
     }
 
-    private static void withdraw(Player p, double amount) {
+    public static void withdraw(Player p, double amount) {
         Economy econ = VaultEconomy.get();
         if (econ == null) {
             p.sendMessage(ChatColor.RED + "Economy is unavailable; cannot process withdrawal right now.");
@@ -143,7 +145,7 @@ public class SavingsCommand implements CommandExecutor, TabCompleter {
         });
     }
 
-    private static void info(Player p) {
+    public static void info(Player p) {
         String uuid = p.getUniqueId().toString();
         double rate = AlsBanker.get().getConfig().getDouble("savings.interest_rate", 0.01);
 

@@ -43,9 +43,15 @@ public class AlsBanker extends JavaPlugin {
         // Pull in previously-linked Discord accounts.
         DiscordLinkManager.load();
 
+        // Open the Discord gateway connection so the bot shows as online (DMs
+        // themselves still go over the plain REST API in DiscordNotifier).
+        DiscordGateway.connect();
+
         // GUIs: the in-game "Bank App" menu and the admin panel.
         getServer().getPluginManager().registerEvents(new BankGuiManager(), this);
         com.alexander.alsbanker.bank.LoanGuiManager.register();
+        com.alexander.alsbanker.bank.SavingsGuiManager.register();
+        com.alexander.alsbanker.bank.StocksGuiManager.register();
         GuiManager.register();
         getLogger().info("GUIs registered.");
 
@@ -110,6 +116,7 @@ public class AlsBanker extends JavaPlugin {
     @Override
     public void onDisable() {
         AlsBankerFileLogger.log("onDisable() called");
+        DiscordGateway.disconnect();
         DatabaseManager.close();
         AlsBankerFileLogger.stop();
     }

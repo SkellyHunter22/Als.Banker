@@ -21,4 +21,14 @@ public interface BankingAPI {
      * Most recent transactions for a player, newest first.
      */
     List<Transaction> getTransactionHistory(UUID uuid, int limit);
+
+    /**
+     * Savings account summary for a player, or {@link SavingsInfo#NONE} if they have none / savings is disabled.
+     */
+    SavingsInfo getSavingsInfo(UUID uuid);
+
+    /**
+     * Current stock portfolio for a player (empty list if they hold nothing).
+     */
+    List<StockHolding> getStockPortfolio(UUID uuid);
 }

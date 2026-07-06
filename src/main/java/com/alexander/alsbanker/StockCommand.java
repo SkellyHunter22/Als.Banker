@@ -1,5 +1,6 @@
 package com.alexander.alsbanker;
 
+import com.alexander.alsbanker.bank.StocksGuiManager;
 import net.milkbowl.vault.economy.Economy;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
@@ -16,7 +17,7 @@ import java.util.List;
 
 public class StockCommand implements CommandExecutor, TabCompleter {
 
-    private static final List<String> SUBCOMMANDS = Arrays.asList("list", "buy", "sell", "portfolio");
+    private static final List<String> SUBCOMMANDS = Arrays.asList("list", "buy", "sell", "portfolio", "gui");
 
     @Override
     public boolean onCommand(CommandSender sender, Command cmd, String label, String[] args) {
@@ -27,10 +28,7 @@ public class StockCommand implements CommandExecutor, TabCompleter {
         Player p = (Player) sender;
 
         if (args.length == 0) {
-            p.sendMessage(ChatColor.YELLOW + "/stocks list");
-            p.sendMessage(ChatColor.YELLOW + "/stocks buy <symbol> <shares>");
-            p.sendMessage(ChatColor.YELLOW + "/stocks sell <symbol> <shares>");
-            p.sendMessage(ChatColor.YELLOW + "/stocks portfolio");
+            StocksGuiManager.openMenu(p);
             return true;
         }
 
@@ -84,7 +82,7 @@ public class StockCommand implements CommandExecutor, TabCompleter {
         return new ArrayList<>();
     }
 
-    private static void list(Player p) {
+    public static void list(Player p) {
         Bukkit.getScheduler().runTaskAsynchronously(AlsBanker.get(), () -> {
             try {
                 List<StockDataService.Stock> stocks = StockDataService.listStocks();
@@ -104,8 +102,8 @@ public class StockCommand implements CommandExecutor, TabCompleter {
         });
     }
 
-    private static void trade(Player p, String symbol, double shares, boolean buying) {
-        if (Double.isNaN(shares)) return;
+    public static void trade(Player p, String symbol, double shares, boolean buying) {
+        if (Double.isNaN(shares) || symbol == null || symbol.isEmpty()) return;
 
         Economy econ = VaultEconomy.get();
         if (econ == null) {
@@ -183,7 +181,7 @@ public class StockCommand implements CommandExecutor, TabCompleter {
         });
     }
 
-    private static void portfolio(Player p) {
+    public static void portfolio(Player p) {
         String uuid = p.getUniqueId().toString();
 
         Bukkit.getScheduler().runTaskAsynchronously(AlsBanker.get(), () -> {

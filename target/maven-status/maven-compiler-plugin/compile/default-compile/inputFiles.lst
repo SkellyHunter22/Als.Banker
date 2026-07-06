@@ -4,12 +4,17 @@ C:\Users\furba\IdeaProjects\EcoLoanScheduler\src\main\java\com\alexander\alsbank
 C:\Users\furba\IdeaProjects\EcoLoanScheduler\src\main\java\com\alexander\alsbanker\api\AlsBankingAPI.java
 C:\Users\furba\IdeaProjects\EcoLoanScheduler\src\main\java\com\alexander\alsbanker\api\BankingAPI.java
 C:\Users\furba\IdeaProjects\EcoLoanScheduler\src\main\java\com\alexander\alsbanker\api\LoanInfo.java
+C:\Users\furba\IdeaProjects\EcoLoanScheduler\src\main\java\com\alexander\alsbanker\api\SavingsInfo.java
+C:\Users\furba\IdeaProjects\EcoLoanScheduler\src\main\java\com\alexander\alsbanker\api\StockHolding.java
 C:\Users\furba\IdeaProjects\EcoLoanScheduler\src\main\java\com\alexander\alsbanker\api\Transaction.java
 C:\Users\furba\IdeaProjects\EcoLoanScheduler\src\main\java\com\alexander\alsbanker\bank\BankGuiManager.java
 C:\Users\furba\IdeaProjects\EcoLoanScheduler\src\main\java\com\alexander\alsbanker\bank\BedrockFormBridge.java
 C:\Users\furba\IdeaProjects\EcoLoanScheduler\src\main\java\com\alexander\alsbanker\bank\JavaNumpadGUI.java
 C:\Users\furba\IdeaProjects\EcoLoanScheduler\src\main\java\com\alexander\alsbanker\bank\LoanGuiManager.java
+C:\Users\furba\IdeaProjects\EcoLoanScheduler\src\main\java\com\alexander\alsbanker\bank\SavingsGuiManager.java
+C:\Users\furba\IdeaProjects\EcoLoanScheduler\src\main\java\com\alexander\alsbanker\bank\StocksGuiManager.java
 C:\Users\furba\IdeaProjects\EcoLoanScheduler\src\main\java\com\alexander\alsbanker\DatabaseManager.java
+C:\Users\furba\IdeaProjects\EcoLoanScheduler\src\main\java\com\alexander\alsbanker\DiscordGateway.java
 C:\Users\furba\IdeaProjects\EcoLoanScheduler\src\main\java\com\alexander\alsbanker\DiscordLinkManager.java
 C:\Users\furba\IdeaProjects\EcoLoanScheduler\src\main\java\com\alexander\alsbanker\DiscordNotifier.java
 C:\Users\furba\IdeaProjects\EcoLoanScheduler\src\main\java\com\alexander\alsbanker\GuiListener.java
