@@ -21,6 +21,17 @@ public class DiscordGateway {
     private static final Pattern OP_PATTERN = Pattern.compile("\"op\":(-?\\d+)");
     private static final Pattern SEQ_PATTERN = Pattern.compile("\"s\":(\\d+)");
     private static final Pattern HEARTBEAT_PATTERN = Pattern.compile("\"heartbeat_interval\":(\\d+)");
+    private static final Pattern EVENT_TYPE_PATTERN = Pattern.compile("\"t\":\"(\\w+)\"");
+    private static final Pattern CONTENT_PATTERN = Pattern.compile("\"content\":\"((?:[^\"\\\\]|\\\\.)*)\"");
+    private static final Pattern AUTHOR_ID_PATTERN = Pattern.compile("\"author\":\\{[^}]*\"id\":\"(\\d+)\"");
+    private static final Pattern AUTHOR_BOT_PATTERN = Pattern.compile("\"author\":\\{[^}]*\"bot\":true");
+    private static final Pattern CHANNEL_ID_PATTERN = Pattern.compile("\"channel_id\":\"(\\d+)\"");
+    private static final Pattern LINK_CODE_PATTERN = Pattern.compile("(?i)^link\\s+(\\d{6})$");
+
+    // DIRECT_MESSAGES (1<<12) + MESSAGE_CONTENT (1<<15) — enough to read DMs sent
+    // to the bot for the /linkdiscord code flow, nothing else. MESSAGE_CONTENT
+    // must also be enabled as a privileged intent in the Discord developer portal.
+    private static final int INTENTS = (1 << 12) | (1 << 15);
 
     private static volatile boolean shuttingDown = false;
     private static volatile WebSocket webSocket;
@@ -140,14 +151,47 @@ public class DiscordGateway {
                     stopHeartbeat();
                     ws.sendClose(WebSocket.NORMAL_CLOSURE, "Reconnecting");
                 }
+                case 0 -> handleDispatch(message); // Dispatch event
                 default -> {
-                    // Dispatch events and heartbeat ACKs don't need handling just to stay online.
+                    // Heartbeat ACKs etc. don't need handling just to stay online.
                 }
             }
         }
 
+        private void handleDispatch(String message) {
+            Matcher typeMatcher = EVENT_TYPE_PATTERN.matcher(message);
+            if (!typeMatcher.find() || !"MESSAGE_CREATE".equals(typeMatcher.group(1))) return;
+
+            Matcher botMatcher = AUTHOR_BOT_PATTERN.matcher(message);
+            if (botMatcher.find()) return; // ignore bots, including ourselves
+
+            Matcher contentMatcher = CONTENT_PATTERN.matcher(message);
+            Matcher authorMatcher = AUTHOR_ID_PATTERN.matcher(message);
+            Matcher channelMatcher = CHANNEL_ID_PATTERN.matcher(message);
+            if (!contentMatcher.find() || !authorMatcher.find() || !channelMatcher.find()) return;
+
+            String content = contentMatcher.group(1).replace("\\\"", "\"").replace("\\\\", "\\").trim();
+            String authorId = authorMatcher.group(1);
+            String channelId = channelMatcher.group(1);
+
+            Matcher codeMatcher = LINK_CODE_PATTERN.matcher(content);
+            if (!codeMatcher.matches()) return;
+
+            String uuid = PendingDiscordLinkManager.consume(codeMatcher.group(1));
+            if (uuid == null) {
+                DiscordNotifier.sendToChannel(token, channelId,
+                        "That code is invalid or expired. Run /linkdiscord again in-game to get a new one.");
+                return;
+            }
+
+            DiscordLinkManager.link(uuid, authorId);
+            AuditLogger.log(java.util.UUID.fromString(uuid), "discord", "LINK_DISCORD", "discordId=" + authorId);
+            DiscordNotifier.sendToChannel(token, channelId,
+                    "Linked! Your Minecraft account is now connected to this Discord account.");
+        }
+
         private void identify(WebSocket ws) {
-            String payload = "{\"op\":2,\"d\":{\"token\":\"" + escape(token) + "\",\"intents\":0,"
+            String payload = "{\"op\":2,\"d\":{\"token\":\"" + escape(token) + "\",\"intents\":" + INTENTS + ","
                     + "\"properties\":{\"os\":\"linux\",\"browser\":\"alsbanker\",\"device\":\"alsbanker\"}}}";
             ws.sendText(payload, true);
         }

@@ -39,27 +39,35 @@ public class DiscordNotifier {
                 String response = new String(conn.getInputStream().readAllBytes());
                 String channelId = response.split("\"id\":\"")[1].split("\"")[0];
 
-                URL msgUrl = new URL("https://discord.com/api/v10/channels/" + channelId + "/messages");
-                HttpURLConnection msgConn = (HttpURLConnection) msgUrl.openConnection();
-                msgConn.setRequestMethod("POST");
-                msgConn.setRequestProperty("Authorization", "Bot " + token);
-                msgConn.setRequestProperty("Content-Type", "application/json");
-                msgConn.setDoOutput(true);
-
-                String msgJson = "{\"content\":\"" + escapeJson(message) + "\"}";
-                try (OutputStream os = msgConn.getOutputStream()) {
-                    os.write(msgJson.getBytes());
-                }
-
-                if (msgConn.getResponseCode() >= 300) {
-                    AlsBanker.get().getLogger().warning(
-                            "Discord DM send failed with HTTP " + msgConn.getResponseCode());
-                }
-
+                sendToChannel(token, channelId, message);
             } catch (Exception e) {
                 AlsBanker.get().getLogger().warning("Discord DM failed: " + e.getMessage());
             }
         });
+    }
+
+    /** Posts a message to an already-known channel ID (e.g. a DM channel we were just messaged in). */
+    public static void sendToChannel(String token, String channelId, String message) {
+        try {
+            URL msgUrl = new URL("https://discord.com/api/v10/channels/" + channelId + "/messages");
+            HttpURLConnection msgConn = (HttpURLConnection) msgUrl.openConnection();
+            msgConn.setRequestMethod("POST");
+            msgConn.setRequestProperty("Authorization", "Bot " + token);
+            msgConn.setRequestProperty("Content-Type", "application/json");
+            msgConn.setDoOutput(true);
+
+            String msgJson = "{\"content\":\"" + escapeJson(message) + "\"}";
+            try (OutputStream os = msgConn.getOutputStream()) {
+                os.write(msgJson.getBytes());
+            }
+
+            if (msgConn.getResponseCode() >= 300) {
+                AlsBanker.get().getLogger().warning(
+                        "Discord channel send failed with HTTP " + msgConn.getResponseCode());
+            }
+        } catch (Exception e) {
+            AlsBanker.get().getLogger().warning("Discord channel send failed: " + e.getMessage());
+        }
     }
 
     private static String escapeJson(String value) {

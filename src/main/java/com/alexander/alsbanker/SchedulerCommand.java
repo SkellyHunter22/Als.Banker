@@ -1,21 +1,29 @@
 package com.alexander.alsbanker;
 
+import net.md_5.bungee.api.chat.BaseComponent;
+import net.md_5.bungee.api.chat.ClickEvent;
+import net.md_5.bungee.api.chat.ComponentBuilder;
+import net.md_5.bungee.api.chat.HoverEvent;
+import net.md_5.bungee.api.chat.TextComponent;
+import net.md_5.bungee.api.chat.hover.content.Text;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.command.*;
 import org.bukkit.entity.Player;
 
-public class SchedulerCommand implements CommandExecutor {
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+
+public class SchedulerCommand implements CommandExecutor, TabCompleter {
+
+    private static final List<String> SUBCOMMANDS = Arrays.asList("reload", "runnow", "gui", "stats", "testdm");
 
     @Override
     public boolean onCommand(CommandSender sender, Command cmd, String label, String[] args) {
 
         if (args.length == 0) {
-            sender.sendMessage(ChatColor.YELLOW + "/loanscheduler reload");
-            sender.sendMessage(ChatColor.YELLOW + "/loanscheduler runnow");
-            sender.sendMessage(ChatColor.YELLOW + "/loanscheduler gui");
-            sender.sendMessage(ChatColor.YELLOW + "/loanscheduler stats");
-            sender.sendMessage(ChatColor.YELLOW + "/loanscheduler testdm [message]");
+            sendHelp(sender);
             return true;
         }
 
@@ -43,9 +51,7 @@ public class SchedulerCommand implements CommandExecutor {
         }
 
         if (args[0].equalsIgnoreCase("reload")) {
-            AlsBanker.get().reloadConfig();
-            DiscordLinkManager.load();
-            sender.sendMessage(ChatColor.GREEN + "Reloaded.");
+            AlsBanker.get().performReload(sender);
             return true;
         }
 
@@ -66,5 +72,46 @@ public class SchedulerCommand implements CommandExecutor {
         }
 
         return true;
+    }
+
+    @Override
+    public List<String> onTabComplete(CommandSender sender, Command cmd, String label, String[] args) {
+        if (args.length != 1) return new ArrayList<>();
+        List<String> matches = new ArrayList<>();
+        for (String sub : SUBCOMMANDS) {
+            if (sub.startsWith(args[0].toLowerCase())) matches.add(sub);
+        }
+        return matches;
+    }
+
+    private void sendHelp(CommandSender sender) {
+        sender.sendMessage(ChatColor.GOLD + "=== AlsBanker Admin ===");
+        sendClickable(sender, "/loanscheduler reload", "Full soft-restart of AlsBanker (config, DB, schedulers, Discord).");
+        sendClickable(sender, "/loanscheduler runnow", "Run the overdue-loan/interest cycle immediately.");
+        sendClickable(sender, "/loanscheduler gui", "Open the admin panel.");
+        sendClickable(sender, "/loanscheduler stats", "Show plugin-wide stats.");
+        sendClickable(sender, "/loanscheduler testdm", "Send yourself a test Discord DM.");
+        sender.sendMessage(ChatColor.GOLD + "=== Player Commands ===");
+        sendClickable(sender, "/loan", "Request or repay a loan.");
+        sendClickable(sender, "/savings", "Manage your savings account.");
+        sendClickable(sender, "/stocks", "Buy and sell stocks.");
+        sendClickable(sender, "/creditcard", "Apply for and manage a credit card.");
+        sendClickable(sender, "/linkdiscord", "Link your Discord account.");
+        sendClickable(sender, "/steal", "Attempt to pickpocket another player.");
+    }
+
+    private void sendClickable(CommandSender sender, String command, String description) {
+        if (!(sender instanceof Player)) {
+            sender.sendMessage(ChatColor.YELLOW + command + ChatColor.GRAY + " - " + description);
+            return;
+        }
+
+        BaseComponent[] component = new ComponentBuilder(command)
+                .color(net.md_5.bungee.api.ChatColor.YELLOW)
+                .event(new ClickEvent(ClickEvent.Action.SUGGEST_COMMAND, command))
+                .event(new HoverEvent(HoverEvent.Action.SHOW_TEXT, new Text(description + "\n" + ChatColor.GRAY + "Click to fill this in.")))
+                .append(ChatColor.GRAY + " - " + description)
+                .create();
+        ((Player) sender).spigot().sendMessage(component);
     }
 }

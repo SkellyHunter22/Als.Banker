@@ -10,12 +10,19 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Placeholders:
- *  %alsbanker_linked%       - "Yes"/"No"
- *  %alsbanker_discord_id%   - linked Discord ID, or "Not linked"
- *  %alsbanker_interval%     - configured cycle interval, in minutes
- *  %alsbanker_penalty_rate% - configured penalty rate
- *  %alsbanker_outstanding%  - player's total outstanding loan balance
- *  %alsbanker_active_loans% - player's active loan count
+ *  %alsbanker_linked%              - "Yes"/"No"
+ *  %alsbanker_discord_id%          - linked Discord ID, or "Not linked"
+ *  %alsbanker_interval%            - configured cycle interval, in minutes
+ *  %alsbanker_penalty_rate%        - configured penalty rate
+ *  %alsbanker_outstanding%         - player's total outstanding loan balance
+ *  %alsbanker_active_loans%        - player's active loan count
+ *  %alsbanker_credit_score%        - player's credit score (300-850)
+ *  %alsbanker_credit_rating%       - "Poor"/"Fair"/"Good"/"Excellent"
+ *  %alsbanker_credit_max_loan%     - largest loan the player currently qualifies for
+ *  %alsbanker_creditcard_limit%    - credit card limit, or "0.00" if none
+ *  %alsbanker_creditcard_balance%  - credit card balance owed
+ *  %alsbanker_creditcard_available%  - remaining available credit
+ *  %alsbanker_creditcard_utilization% - balance/limit as a percentage, e.g. "42"
  */
 public class AlsBankerPlaceholderExpansion extends PlaceholderExpansion {
 
@@ -23,6 +30,8 @@ public class AlsBankerPlaceholderExpansion extends PlaceholderExpansion {
     // a synchronous placeholder request (e.g. from a scoreboard) never blocks the main thread on JDBC.
     private final Map<String, Double> outstandingCache = new ConcurrentHashMap<>();
     private final Map<String, Integer> activeLoansCache = new ConcurrentHashMap<>();
+    private final Map<String, Integer> creditScoreCache = new ConcurrentHashMap<>();
+    private final Map<String, double[]> creditCardCache = new ConcurrentHashMap<>(); // [limit, balance]
 
     @Override
     public String getIdentifier() {
@@ -72,6 +81,44 @@ public class AlsBankerPlaceholderExpansion extends PlaceholderExpansion {
                 refreshPlayerStats(uuid);
                 return String.valueOf(activeLoansCache.getOrDefault(uuid, 0));
 
+            case "credit_score": {
+                refreshCreditScore(uuid);
+                int score = creditScoreCache.getOrDefault(uuid, AlsBanker.get().getConfig().getInt("credit.starting_score", 650));
+                return String.valueOf(score);
+            }
+
+            case "credit_rating": {
+                refreshCreditScore(uuid);
+                int score = creditScoreCache.getOrDefault(uuid, AlsBanker.get().getConfig().getInt("credit.starting_score", 650));
+                return CreditScoreService.rating(score);
+            }
+
+            case "credit_max_loan": {
+                refreshCreditScore(uuid);
+                int score = creditScoreCache.getOrDefault(uuid, AlsBanker.get().getConfig().getInt("credit.starting_score", 650));
+                return String.format("%.2f", CreditScoreService.maxLoanForScore(score));
+            }
+
+            case "creditcard_limit":
+                refreshCreditCard(uuid);
+                return String.format("%.2f", creditCardCache.getOrDefault(uuid, new double[]{0, 0})[0]);
+
+            case "creditcard_balance":
+                refreshCreditCard(uuid);
+                return String.format("%.2f", creditCardCache.getOrDefault(uuid, new double[]{0, 0})[1]);
+
+            case "creditcard_available": {
+                refreshCreditCard(uuid);
+                double[] card = creditCardCache.getOrDefault(uuid, new double[]{0, 0});
+                return String.format("%.2f", card[0] - card[1]);
+            }
+
+            case "creditcard_utilization": {
+                refreshCreditCard(uuid);
+                double[] card = creditCardCache.getOrDefault(uuid, new double[]{0, 0});
+                return String.valueOf(card[0] <= 0 ? 0 : Math.round(card[1] / card[0] * 100));
+            }
+
             default:
                 return null;
         }
@@ -85,6 +132,29 @@ public class AlsBankerPlaceholderExpansion extends PlaceholderExpansion {
             } catch (Exception e) {
                 AlsBanker.get().getLogger().warning(
                         "Failed to refresh placeholder stats for " + uuid + ": " + e.getMessage());
+            }
+        });
+    }
+
+    private void refreshCreditScore(String uuid) {
+        Bukkit.getScheduler().runTaskAsynchronously(AlsBanker.get(), () -> {
+            try {
+                creditScoreCache.put(uuid, CreditScoreService.getScore(uuid));
+            } catch (Exception e) {
+                AlsBanker.get().getLogger().warning(
+                        "Failed to refresh credit score placeholder for " + uuid + ": " + e.getMessage());
+            }
+        });
+    }
+
+    private void refreshCreditCard(String uuid) {
+        Bukkit.getScheduler().runTaskAsynchronously(AlsBanker.get(), () -> {
+            try {
+                CreditCardDataService.Card card = CreditCardDataService.getCard(uuid);
+                creditCardCache.put(uuid, card == null ? new double[]{0, 0} : new double[]{card.limit(), card.balance()});
+            } catch (Exception e) {
+                AlsBanker.get().getLogger().warning(
+                        "Failed to refresh credit card placeholder for " + uuid + ": " + e.getMessage());
             }
         });
     }

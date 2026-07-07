@@ -114,6 +114,11 @@ public class StockCommand implements CommandExecutor, TabCompleter {
         String uuid = p.getUniqueId().toString();
         String upperSymbol = symbol.toUpperCase();
 
+        if (!PlayerActionLock.tryLock(uuid)) {
+            p.sendMessage(ChatColor.RED + "Please wait for your previous request to finish.");
+            return;
+        }
+
         Bukkit.getScheduler().runTaskAsynchronously(AlsBanker.get(), () -> {
             try {
                 StockDataService.Stock stock = StockDataService.getStock(upperSymbol);
@@ -134,6 +139,8 @@ public class StockCommand implements CommandExecutor, TabCompleter {
                 AlsBanker.get().getLogger().severe("Stock trade failed: " + e.getMessage());
                 Bukkit.getScheduler().runTask(AlsBanker.get(), () ->
                         p.sendMessage(ChatColor.RED + "Trade failed due to a database error."));
+            } finally {
+                PlayerActionLock.unlock(uuid);
             }
         });
     }
@@ -228,8 +235,8 @@ public class StockCommand implements CommandExecutor, TabCompleter {
             p.sendMessage(ChatColor.RED + "Shares must be a number.");
             return Double.NaN;
         }
-        if (shares <= 0) {
-            p.sendMessage(ChatColor.RED + "Shares must be positive.");
+        if (!Double.isFinite(shares) || shares <= 0) {
+            p.sendMessage(ChatColor.RED + "Shares must be a positive, finite number.");
             return Double.NaN;
         }
         return shares;

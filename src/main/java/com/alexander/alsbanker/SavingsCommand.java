@@ -93,11 +93,20 @@ public class SavingsCommand implements CommandExecutor, TabCompleter {
         }
 
         String uuid = p.getUniqueId().toString();
+
+        if (!PlayerActionLock.tryLock(uuid)) {
+            p.sendMessage(ChatColor.RED + "Please wait for your previous request to finish.");
+            return;
+        }
+
         Bukkit.getScheduler().runTaskAsynchronously(AlsBanker.get(), () -> {
             try {
                 SavingsDataService.deposit(uuid, amount);
                 double newBalance = SavingsDataService.getBalance(uuid);
                 TransactionService.record(uuid, "SAVINGS_DEPOSIT", amount, newBalance, "Deposit into savings");
+
+                int scoreGain = AlsBanker.get().getConfig().getInt("credit.score_gain_savings_deposit", 2);
+                CreditScoreService.adjustScore(uuid, scoreGain);
 
                 Bukkit.getScheduler().runTask(AlsBanker.get(), () -> {
                     econ.withdrawPlayer(p, amount);
@@ -108,6 +117,8 @@ public class SavingsCommand implements CommandExecutor, TabCompleter {
                 AlsBanker.get().getLogger().severe("Savings deposit failed: " + e.getMessage());
                 Bukkit.getScheduler().runTask(AlsBanker.get(), () ->
                         p.sendMessage(ChatColor.RED + "Failed to deposit due to a database error."));
+            } finally {
+                PlayerActionLock.unlock(uuid);
             }
         });
     }
@@ -120,6 +131,12 @@ public class SavingsCommand implements CommandExecutor, TabCompleter {
         }
 
         String uuid = p.getUniqueId().toString();
+
+        if (!PlayerActionLock.tryLock(uuid)) {
+            p.sendMessage(ChatColor.RED + "Please wait for your previous request to finish.");
+            return;
+        }
+
         Bukkit.getScheduler().runTaskAsynchronously(AlsBanker.get(), () -> {
             try {
                 boolean success = SavingsDataService.withdraw(uuid, amount);
@@ -141,6 +158,8 @@ public class SavingsCommand implements CommandExecutor, TabCompleter {
                 AlsBanker.get().getLogger().severe("Savings withdrawal failed: " + e.getMessage());
                 Bukkit.getScheduler().runTask(AlsBanker.get(), () ->
                         p.sendMessage(ChatColor.RED + "Failed to withdraw due to a database error."));
+            } finally {
+                PlayerActionLock.unlock(uuid);
             }
         });
     }
@@ -173,8 +192,8 @@ public class SavingsCommand implements CommandExecutor, TabCompleter {
             p.sendMessage(ChatColor.RED + "Amount must be a number.");
             return Double.NaN;
         }
-        if (amount <= 0) {
-            p.sendMessage(ChatColor.RED + "Amount must be positive.");
+        if (!Double.isFinite(amount) || amount <= 0) {
+            p.sendMessage(ChatColor.RED + "Amount must be a positive, finite number.");
             return Double.NaN;
         }
         return amount;

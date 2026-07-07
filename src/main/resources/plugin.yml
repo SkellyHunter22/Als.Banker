@@ -1,10 +1,10 @@
 name: AlsBanker
-version: 0.9a
+version: 0.11
 main: com.alexander.alsbanker.AlsBanker
 api-version: 1.20
 author: SkellyHunter22
 description: Full loan scheduler replacement for EcoXpert with Discord integration.
-softdepend: [Vault, PlaceholderAPI]
+softdepend: [Vault, PlaceholderAPI, PlugManX, PlugMan]
 loadbefore: [EcoXpert]
 
 commands:
@@ -19,6 +19,7 @@ commands:
 
   linkdiscord:
     description: Link your Discord account
+    usage: "/linkdiscord [discordID]"
     permission: alsbanker.user
 
   unlinkdiscord:
@@ -35,8 +36,20 @@ commands:
     usage: "/stocks <list|buy|sell|portfolio> [symbol] [shares]"
     permission: alsbanker.user
 
+  steal:
+    description: Attempt to pickpocket another player
+    usage: "/steal <player>"
+    permission: alsbanker.steal
+
+  creditcard:
+    description: Apply for and manage a revolving credit card
+    usage: "/creditcard <apply|info|charge|pay> [amount]"
+    permission: alsbanker.user
+
 permissions:
   alsbanker.admin:
     default: op
   alsbanker.user:
+    default: true
+  alsbanker.steal:
     default: true

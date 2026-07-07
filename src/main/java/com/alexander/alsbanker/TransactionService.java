@@ -32,39 +32,62 @@ public class TransactionService {
         try (Connection conn = DatabaseManager.getConnection();
              Statement stmt = conn.createStatement()) {
             stmt.execute("CREATE TABLE IF NOT EXISTS alsbanker_transactions (" +
-                    "id INT AUTO_INCREMENT PRIMARY KEY, player_uuid VARCHAR(36), " +
+                    "id INT AUTO_INCREMENT PRIMARY KEY, player_uuid VARCHAR(36), player_name VARCHAR(16), " +
                     "type VARCHAR(32), amount DOUBLE, balance_after DOUBLE, " +
                     "description VARCHAR(255), created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
         } catch (SQLException e) {
             AlsBanker.get().getLogger().severe("Transaction table init failed: " + e.getMessage());
         }
+        // Older installs created this table before player_name existed; add it if missing.
+        try (Connection conn = DatabaseManager.getConnection();
+             Statement stmt = conn.createStatement()) {
+            stmt.execute("ALTER TABLE alsbanker_transactions ADD COLUMN player_name VARCHAR(16)");
+        } catch (SQLException e) {
+            // Duplicate column name — already migrated. Anything else is logged but non-fatal.
+            if (!e.getMessage().toLowerCase().contains("duplicate")) {
+                AlsBanker.get().getLogger().warning("Transaction table migration check failed: " + e.getMessage());
+            }
+        }
     }
 
     public static void record(String uuid, String type, double amount, double balanceAfter, String description) {
+        String playerName = AuditLogger.resolveName(safeUuid(uuid));
+
         try (Connection conn = DatabaseManager.getConnection();
              PreparedStatement ps = conn.prepareStatement(
-                     "INSERT INTO alsbanker_transactions (player_uuid, type, amount, balance_after, description) " +
-                     "VALUES (?, ?, ?, ?, ?)")) {
+                     "INSERT INTO alsbanker_transactions (player_uuid, player_name, type, amount, balance_after, description) " +
+                     "VALUES (?, ?, ?, ?, ?, ?)")) {
             ps.setString(1, uuid);
-            ps.setString(2, type);
-            ps.setDouble(3, amount);
-            ps.setDouble(4, balanceAfter);
-            ps.setString(5, description);
+            ps.setString(2, playerName);
+            ps.setString(3, type);
+            ps.setDouble(4, amount);
+            ps.setDouble(5, balanceAfter);
+            ps.setString(6, description);
             ps.executeUpdate();
         } catch (SQLException e) {
             AlsBanker.get().getLogger().severe("Failed to record transaction: " + e.getMessage());
         }
 
-        writeToFile(uuid, type, amount, balanceAfter, description);
+        writeToFile(uuid, playerName, type, amount, balanceAfter, description);
+        AuditLogger.log(uuid, playerName, "transaction", type,
+                String.format("amount=%.2f balanceAfter=%.2f desc=%s", amount, balanceAfter, description));
     }
 
-    private static void writeToFile(String uuid, String type, double amount, double balanceAfter, String description) {
+    private static java.util.UUID safeUuid(String uuid) {
+        try {
+            return java.util.UUID.fromString(uuid);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static void writeToFile(String uuid, String playerName, String type, double amount, double balanceAfter, String description) {
         Path dir = AlsBanker.get().getDataFolder().toPath().resolve("transactions");
         try {
             Files.createDirectories(dir);
             Path file = dir.resolve("transactions-" + LocalDate.now() + ".log");
-            String line = String.format("[%s] player=%s type=%s amount=%.2f balanceAfter=%.2f | %s",
-                    LocalDateTime.now().format(TIMESTAMP), uuid, type, amount, balanceAfter, description);
+            String line = String.format("[%s] player=%s uuid=%s type=%s amount=%.2f balanceAfter=%.2f | %s",
+                    LocalDateTime.now().format(TIMESTAMP), playerName, uuid, type, amount, balanceAfter, description);
             try (PrintWriter out = new PrintWriter(Files.newBufferedWriter(file, StandardCharsets.UTF_8,
                     StandardOpenOption.CREATE, StandardOpenOption.APPEND))) {
                 out.println(line);

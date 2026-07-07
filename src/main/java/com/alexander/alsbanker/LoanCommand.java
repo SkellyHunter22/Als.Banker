@@ -19,7 +19,7 @@ import java.util.List;
 
 public class LoanCommand implements CommandExecutor, TabCompleter {
 
-    private static final List<String> SUBCOMMANDS = Arrays.asList("request", "pay", "info", "history", "gui");
+    private static final List<String> SUBCOMMANDS = Arrays.asList("request", "pay", "info", "history", "gui", "credit");
     private static final List<String> AMOUNT_SUGGESTIONS = Arrays.asList("100", "250", "500", "1000");
 
     @Override
@@ -62,6 +62,9 @@ public class LoanCommand implements CommandExecutor, TabCompleter {
             case "gui":
                 LoanGuiManager.openMenu(p);
                 return true;
+            case "credit":
+                handleCredit(p);
+                return true;
             default:
                 p.sendMessage(ChatColor.RED + "Unknown /loan subcommand.");
                 return true;
@@ -94,12 +97,6 @@ public class LoanCommand implements CommandExecutor, TabCompleter {
      * GUI numpad, and the Bedrock form, so all three paths apply the same rules.
      */
     public static void requestLoan(Player p, double amount) {
-        double maxAmount = AlsBanker.get().getConfig().getDouble("loan.max_amount", 5000.0);
-        if (amount > maxAmount) {
-            p.sendMessage(ChatColor.RED + "Loans are capped at " + String.format("%.2f", maxAmount) + ".");
-            return;
-        }
-
         Economy econ = VaultEconomy.get();
         if (econ == null) {
             p.sendMessage(ChatColor.RED + "Economy is unavailable; cannot process loan right now.");
@@ -108,11 +105,39 @@ public class LoanCommand implements CommandExecutor, TabCompleter {
 
         String uuid = p.getUniqueId().toString();
 
+        if (!DiscordLinkManager.isLinked(uuid)) {
+            p.sendMessage(ChatColor.RED + "You must link a Discord account before taking out a loan.");
+            p.sendMessage(ChatColor.YELLOW + "Run /linkdiscord to get a code, then DM it to the bot on Discord.");
+            return;
+        }
+
+        if (!PlayerActionLock.tryLock(uuid)) {
+            p.sendMessage(ChatColor.RED + "Please wait for your previous request to finish.");
+            return;
+        }
+
         Bukkit.getScheduler().runTaskAsynchronously(AlsBanker.get(), () -> {
             try {
                 if (LoanDataService.getActiveLoanCount(uuid) > 0) {
                     Bukkit.getScheduler().runTask(AlsBanker.get(), () ->
                             p.sendMessage(ChatColor.RED + "You already have an active loan. Pay it off before requesting another."));
+                    return;
+                }
+
+                int score = CreditScoreService.getScore(uuid);
+                int minScoreToBorrow = AlsBanker.get().getConfig().getInt("credit.min_score_for_loan", 500);
+                if (score < minScoreToBorrow) {
+                    Bukkit.getScheduler().runTask(AlsBanker.get(), () ->
+                            p.sendMessage(ChatColor.RED + "Your credit score (" + score +
+                                    ") is too low to qualify for a loan. You need at least " + minScoreToBorrow + "."));
+                    return;
+                }
+
+                double maxAmount = CreditScoreService.maxLoanForScore(score);
+                if (amount > maxAmount) {
+                    Bukkit.getScheduler().runTask(AlsBanker.get(), () ->
+                            p.sendMessage(ChatColor.RED + "With your credit score (" + score + "), loans are capped at $" +
+                                    String.format("%.2f", maxAmount) + "."));
                     return;
                 }
 
@@ -129,15 +154,16 @@ public class LoanCommand implements CommandExecutor, TabCompleter {
                     econ.depositPlayer(p, amount);
                     p.sendTitle(ChatColor.GOLD + "Loan Approved!",
                             ChatColor.GREEN + String.format("$%.2f deposited", amount), 10, 70, 20);
-                    p.sendMessage(ChatColor.GREEN + "Your loan of $" + String.format("%.2f", amount) +
-                            " has been approved, split into " + installments + " payments.");
-                    LoanEventListener.notifyLoanCreated(p, "Your loan of $" + String.format("%.2f", amount) +
-                            " was approved, split into " + installments + " payments.");
+                    String message = LoanServicerMessages.loanApproved(amount, installments);
+                    p.sendMessage(ChatColor.GREEN + message);
+                    LoanEventListener.notifyLoanCreated(p, message);
                 });
             } catch (SQLException e) {
                 AlsBanker.get().getLogger().severe("Loan creation failed: " + e.getMessage());
                 Bukkit.getScheduler().runTask(AlsBanker.get(), () ->
                         p.sendMessage(ChatColor.RED + "Failed to create loan due to a database error."));
+            } finally {
+                PlayerActionLock.unlock(uuid);
             }
         });
     }
@@ -160,6 +186,11 @@ public class LoanCommand implements CommandExecutor, TabCompleter {
 
         String uuid = p.getUniqueId().toString();
 
+        if (!PlayerActionLock.tryLock(uuid)) {
+            p.sendMessage(ChatColor.RED + "Please wait for your previous request to finish.");
+            return;
+        }
+
         Bukkit.getScheduler().runTaskAsynchronously(AlsBanker.get(), () -> {
             try {
                 Double remainingOutstanding = LoanDataService.applyPayment(uuid, amount);
@@ -172,16 +203,27 @@ public class LoanCommand implements CommandExecutor, TabCompleter {
                 TransactionService.record(uuid, "LOAN_PAYMENT", amount, remainingOutstanding,
                         "Payment towards active loan");
 
+                boolean paidOff = remainingOutstanding <= 0;
+                int scoreGain = paidOff
+                        ? AlsBanker.get().getConfig().getInt("credit.score_gain_loan_paid_off", 20)
+                        : AlsBanker.get().getConfig().getInt("credit.score_gain_on_time_payment", 5);
+                int newScore = CreditScoreService.adjustScore(uuid, scoreGain);
+
                 Bukkit.getScheduler().runTask(AlsBanker.get(), () -> {
                     econ.withdrawPlayer(p, amount);
-                    p.sendMessage(ChatColor.GREEN + "Paid $" + String.format("%.2f", amount) + " towards your loan.");
-                    PhoneAlertBridge.send(p, "Paid $" + String.format("%.2f", amount) +
-                            " towards your loan. Remaining: $" + String.format("%.2f", remainingOutstanding) + ".");
+                    String message = LoanServicerMessages.loanPayment(amount, remainingOutstanding, paidOff);
+                    p.sendMessage(ChatColor.GREEN + message);
+                    p.sendMessage(ChatColor.AQUA + "Credit score: " + newScore + " (" + CreditScoreService.rating(newScore) + ")" +
+                            (paidOff ? " — loan fully paid off!" : ""));
+                    PhoneAlertBridge.send(p, message);
+                    DiscordNotifier.dm(uuid, message);
                 });
             } catch (SQLException e) {
                 AlsBanker.get().getLogger().severe("Loan payment failed: " + e.getMessage());
                 Bukkit.getScheduler().runTask(AlsBanker.get(), () ->
                         p.sendMessage(ChatColor.RED + "Failed to process payment due to a database error."));
+            } finally {
+                PlayerActionLock.unlock(uuid);
             }
         });
     }
@@ -239,6 +281,26 @@ public class LoanCommand implements CommandExecutor, TabCompleter {
         });
     }
 
+    public static void handleCredit(Player p) {
+        String uuid = p.getUniqueId().toString();
+
+        Bukkit.getScheduler().runTaskAsynchronously(AlsBanker.get(), () -> {
+            try {
+                int score = CreditScoreService.getScore(uuid);
+                double maxLoan = CreditScoreService.maxLoanForScore(score);
+                Bukkit.getScheduler().runTask(AlsBanker.get(), () -> {
+                    p.sendMessage(ChatColor.GOLD + "=== Your Credit ===");
+                    p.sendMessage(ChatColor.YELLOW + "Score: " + score + " (" + CreditScoreService.rating(score) + ")");
+                    p.sendMessage(ChatColor.YELLOW + "Max loan amount: $" + String.format("%.2f", maxLoan));
+                });
+            } catch (SQLException e) {
+                AlsBanker.get().getLogger().severe("Credit score lookup failed: " + e.getMessage());
+                Bukkit.getScheduler().runTask(AlsBanker.get(), () ->
+                        p.sendMessage(ChatColor.RED + "Failed to load credit info due to a database error."));
+            }
+        });
+    }
+
     private static double parseAmount(Player p, String raw) {
         double amount;
         try {
@@ -247,8 +309,8 @@ public class LoanCommand implements CommandExecutor, TabCompleter {
             p.sendMessage(ChatColor.RED + "Amount must be a number.");
             return Double.NaN;
         }
-        if (amount <= 0) {
-            p.sendMessage(ChatColor.RED + "Amount must be positive.");
+        if (!Double.isFinite(amount) || amount <= 0) {
+            p.sendMessage(ChatColor.RED + "Amount must be a positive, finite number.");
             return Double.NaN;
         }
         return amount;

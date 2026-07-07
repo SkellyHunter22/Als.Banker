@@ -12,10 +12,19 @@ public class DatabaseManager {
     private static HikariDataSource dataSource;
 
     public static void setup() {
+        String url = AlsBanker.get().getConfig().getString("mysql.url");
+        String user = AlsBanker.get().getConfig().getString("mysql.user");
+        String password = AlsBanker.get().getConfig().getString("mysql.password", "");
+
+        if (url == null || url.isBlank() || user == null || user.isBlank()) {
+            throw new IllegalStateException(
+                    "mysql.url and mysql.user must be set in config.yml; refusing to start without a database.");
+        }
+
         HikariConfig config = new HikariConfig();
-        config.setJdbcUrl(AlsBanker.get().getConfig().getString("mysql.url"));
-        config.setUsername(AlsBanker.get().getConfig().getString("mysql.user"));
-        config.setPassword(AlsBanker.get().getConfig().getString("mysql.password"));
+        config.setJdbcUrl(url);
+        config.setUsername(user);
+        config.setPassword(password);
         config.setMaximumPoolSize(10);
         config.addDataSourceProperty("cachePrepStmts", "true");
         dataSource = new HikariDataSource(config);
@@ -40,6 +49,12 @@ public class DatabaseManager {
     }
 
     public static boolean withdraw(UUID uuid, double amount) {
+        // A negative/non-finite amount would flip this into a free deposit (balance
+        // minus a negative number) or corrupt the stored balance, so it's rejected
+        // here too, not just at the AlsBankingAPI boundary — this method is reachable
+        // from anywhere in the plugin, not only through the external API.
+        if (!Double.isFinite(amount) || amount <= 0) return false;
+
         try (Connection conn = getConnection()) {
             conn.setAutoCommit(false);
             try {
@@ -75,6 +90,8 @@ public class DatabaseManager {
     }
 
     public static boolean deposit(UUID uuid, double amount) {
+        if (!Double.isFinite(amount) || amount <= 0) return false;
+
         try (Connection conn = getConnection();
              PreparedStatement upsert = conn.prepareStatement(
                      "INSERT INTO alsbanker_balances (player_uuid, balance) VALUES (?, ?) " +

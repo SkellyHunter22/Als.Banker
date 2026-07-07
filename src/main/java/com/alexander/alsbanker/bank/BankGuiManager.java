@@ -16,7 +16,7 @@ public class BankGuiManager implements Listener {
         e.setCancelled(true);
         Player p = (Player) e.getWhoClicked();
 
-        if (e.getCurrentItem().getType() == Material.GOLD_INGOT) {
+        if (e.getCurrentItem() != null && e.getCurrentItem().getType() == Material.GOLD_INGOT) {
             p.closeInventory();
             if (Bukkit.getPluginManager().isPluginEnabled("floodgate") &&
                     FloodgateApi.getInstance().isFloodgatePlayer(p.getUniqueId())) {

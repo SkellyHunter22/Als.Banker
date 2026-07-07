@@ -5,6 +5,7 @@ import com.alexander.alsbanker.api.BankingAPI;
 import com.alexander.alsbanker.bank.BankGuiManager;
 import org.bukkit.Bukkit;
 import org.bukkit.command.Command;
+import org.bukkit.command.CommandSender;
 import org.bukkit.command.SimpleCommandMap;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -33,11 +34,20 @@ public class AlsBanker extends JavaPlugin {
         getLogger().info("Config loaded.");
 
         // Connect to the shared EcoXpert database and make sure our tables exist.
-        DatabaseManager.setup();
+        try {
+            DatabaseManager.setup();
+        } catch (IllegalStateException e) {
+            getLogger().severe(e.getMessage());
+            Bukkit.getPluginManager().disablePlugin(this);
+            return;
+        }
         LoanDataService.initializeTables();
         TransactionService.initializeTable();
         SavingsDataService.initializeTable();
         StockDataService.initializeTables();
+        CreditScoreService.initializeTable();
+        CreditCardDataService.initializeTable();
+        AuditLogger.initializeTable();
         getLogger().info("Database connected and tables verified.");
 
         // Pull in previously-linked Discord accounts.
@@ -53,22 +63,36 @@ public class AlsBanker extends JavaPlugin {
         com.alexander.alsbanker.bank.SavingsGuiManager.register();
         com.alexander.alsbanker.bank.StocksGuiManager.register();
         GuiManager.register();
+        getServer().getPluginManager().registerEvents(new TheftGuiListener(), this);
+        getServer().getPluginManager().registerEvents(new CommandAuditListener(), this);
         getLogger().info("GUIs registered.");
 
         // Player + admin commands.
-        getCommand("loanscheduler").setExecutor(new SchedulerCommand());
+        SchedulerCommand schedulerCommand = new SchedulerCommand();
+        getCommand("loanscheduler").setExecutor(schedulerCommand);
+        getCommand("loanscheduler").setTabCompleter(schedulerCommand);
         LoanCommand loanCommand = new LoanCommand();
         getCommand("loan").setExecutor(loanCommand);
         getCommand("loan").setTabCompleter(loanCommand);
-        getCommand("linkdiscord").setExecutor(new LinkDiscordCommand());
-        getCommand("unlinkdiscord").setExecutor(new UnlinkDiscordCommand());
+        LinkDiscordCommand linkDiscordCommand = new LinkDiscordCommand();
+        getCommand("linkdiscord").setExecutor(linkDiscordCommand);
+        getCommand("linkdiscord").setTabCompleter(linkDiscordCommand);
+        UnlinkDiscordCommand unlinkDiscordCommand = new UnlinkDiscordCommand();
+        getCommand("unlinkdiscord").setExecutor(unlinkDiscordCommand);
+        getCommand("unlinkdiscord").setTabCompleter(unlinkDiscordCommand);
         SavingsCommand savingsCommand = new SavingsCommand();
         getCommand("savings").setExecutor(savingsCommand);
         getCommand("savings").setTabCompleter(savingsCommand);
         StockCommand stockCommand = new StockCommand();
         getCommand("stocks").setExecutor(stockCommand);
         getCommand("stocks").setTabCompleter(stockCommand);
-        getLogger().info("Commands registered: /loanscheduler, /loan, /linkdiscord, /unlinkdiscord, /savings, /stocks.");
+        TheftCommand theftCommand = new TheftCommand();
+        getCommand("steal").setExecutor(theftCommand);
+        getCommand("steal").setTabCompleter(theftCommand);
+        CreditCardCommand creditCardCommand = new CreditCardCommand();
+        getCommand("creditcard").setExecutor(creditCardCommand);
+        getCommand("creditcard").setTabCompleter(creditCardCommand);
+        getLogger().info("Commands registered: /loanscheduler, /loan, /linkdiscord, /unlinkdiscord, /savings, /stocks, /steal, /creditcard.");
 
         // Kick off the recurring job that applies interest/penalties to overdue loans,
         // credits savings interest, and updates stock prices.
@@ -88,8 +112,48 @@ public class AlsBanker extends JavaPlugin {
         // plugin has finished enabling, so EcoXpert's alias never wins it.
         Bukkit.getScheduler().runTask(this, this::claimLoanCommand);
 
+        // Same reasoning as claimLoanCommand: the real economy plugin (EssentialsX)
+        // may not have registered its Vault service yet at this point in startup.
+        Bukkit.getScheduler().runTask(this, VaultEconomyAuditWrapper::installOrRefresh);
+
         AlsBankerFileLogger.log("onEnable() finished successfully");
         printSuccessBanner();
+    }
+
+    /**
+     * Full soft-restart of the plugin, triggered by /loanscheduler reload. Prefers
+     * handing off to PlugMan/PlugManX (if installed) since it disables and
+     * re-enables the plugin through Bukkit's real plugin manager — firing the
+     * PluginDisableEvent/PluginEnableEvent other plugins may expect — rather than
+     * this plugin quietly re-running its own lifecycle methods in place.
+     */
+    public void performReload(CommandSender sender) {
+        String plugManName = Bukkit.getPluginManager().isPluginEnabled("PlugManX") ? "PlugManX"
+                : Bukkit.getPluginManager().isPluginEnabled("PlugMan") ? "PlugMan"
+                : null;
+
+        AuditLogger.log((java.util.UUID) null, "admin",
+                sender instanceof org.bukkit.entity.Player ? "RELOAD_REQUESTED" : "RELOAD_REQUESTED_CONSOLE",
+                "requestedBy=" + sender.getName() + " via=" + (plugManName != null ? plugManName : "fallback"));
+
+        if (plugManName != null) {
+            sender.sendMessage(org.bukkit.ChatColor.YELLOW + "Reloading AlsBanker via " + plugManName + "...");
+            boolean dispatched = Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "plugman reload AlsBanker");
+            if (dispatched) {
+                sender.sendMessage(org.bukkit.ChatColor.GREEN + "Reload dispatched to " + plugManName + ".");
+                return;
+            }
+            sender.sendMessage(org.bukkit.ChatColor.RED + plugManName + " reload command failed; falling back to a direct reload.");
+        }
+
+        try {
+            onDisable();
+            onEnable();
+            sender.sendMessage(org.bukkit.ChatColor.GREEN + "AlsBanker reloaded.");
+        } catch (Exception e) {
+            getLogger().severe("Reload failed: " + e.getMessage());
+            sender.sendMessage(org.bukkit.ChatColor.RED + "Reload failed; check console for details. The plugin has NOT been disabled.");
+        }
     }
 
     private void claimLoanCommand() {

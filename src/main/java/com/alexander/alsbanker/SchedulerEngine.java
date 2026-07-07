@@ -5,8 +5,13 @@ import org.bukkit.Bukkit;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class SchedulerEngine {
+
+    // Guards against the periodic cycle and a manual "/loanscheduler runnow" overlapping,
+    // which would otherwise double-charge the same overdue schedules for the same day.
+    private static final AtomicBoolean running = new AtomicBoolean(false);
 
     public static void start() {
         int interval = AlsBanker.get().getConfig().getInt("interval_minutes");
@@ -20,25 +25,40 @@ public class SchedulerEngine {
     }
 
     public static void runCycle() {
-        long start = System.currentTimeMillis();
-        int processed = 0;
-
-        try (Connection conn = LoanDataService.openConnection()) {
-            processed += chargeLateFees(conn);
-            processed += chargeDailyPenalties(conn);
-        } catch (Exception e) {
-            AlsBanker.get().getLogger().severe("Scheduler error: " + e.getMessage());
+        if (!running.compareAndSet(false, true)) {
+            AlsBanker.get().getLogger().info("Cycle already in progress, skipping this run.");
+            return;
         }
 
         try {
-            processed += creditSavingsInterest();
-        } catch (Exception e) {
-            AlsBanker.get().getLogger().severe("Savings interest error: " + e.getMessage());
-        }
+            long start = System.currentTimeMillis();
+            int processed = 0;
 
-        long end = System.currentTimeMillis();
-        AlsBanker.get().getLogger().info(
-                "Cycle completed in " + (end - start) + "ms, " + processed + " overdue schedule(s) processed.");
+            try (Connection conn = LoanDataService.openConnection()) {
+                processed += chargeLateFees(conn);
+                processed += chargeDailyPenalties(conn);
+            } catch (Exception e) {
+                AlsBanker.get().getLogger().severe("Scheduler error: " + e.getMessage());
+            }
+
+            try {
+                processed += creditSavingsInterest();
+            } catch (Exception e) {
+                AlsBanker.get().getLogger().severe("Savings interest error: " + e.getMessage());
+            }
+
+            try {
+                processed += chargeCreditCardInterest();
+            } catch (Exception e) {
+                AlsBanker.get().getLogger().severe("Credit card interest error: " + e.getMessage());
+            }
+
+            long end = System.currentTimeMillis();
+            AlsBanker.get().getLogger().info(
+                    "Cycle completed in " + (end - start) + "ms, " + processed + " overdue schedule(s) processed.");
+        } finally {
+            running.set(false);
+        }
     }
 
     /**
@@ -75,8 +95,10 @@ public class SchedulerEngine {
                     markOverdue.setLong(1, scheduleId);
                     markOverdue.executeUpdate();
 
-                    notifyPlayer(uuid, "You missed a loan payment and were charged a $" +
-                            String.format("%.2f", lateFee) + " late fee.");
+                    int scoreLoss = AlsBanker.get().getConfig().getInt("credit.score_loss_late_fee", 15);
+                    CreditScoreService.adjustScore(uuid, -scoreLoss);
+
+                    notifyPlayer(uuid, LoanServicerMessages.lateFee(lateFee));
                     processed++;
                 }
             }
@@ -130,8 +152,10 @@ public class SchedulerEngine {
                     markPenalized.setLong(1, scheduleId);
                     markPenalized.executeUpdate();
 
-                    notifyPlayer(uuid, "Your overdue loan accrued $" +
-                            String.format("%.2f", totalIncrease) + " in interest and penalties today.");
+                    int scoreLoss = AlsBanker.get().getConfig().getInt("credit.score_loss_daily_penalty", 5);
+                    CreditScoreService.adjustScore(uuid, -scoreLoss);
+
+                    notifyPlayer(uuid, LoanServicerMessages.dailyPenalty(totalIncrease));
                     processed++;
                 }
             }
@@ -156,7 +180,34 @@ public class SchedulerEngine {
             }
             TransactionService.record(uuid, "SAVINGS_INTEREST", interest, newBalance,
                     "Daily savings interest");
-            notifyPlayer(uuid, "Your savings earned $" + String.format("%.2f", interest) + " in interest today.");
+            notifyPlayer(uuid, LoanServicerMessages.savingsInterest(interest));
+        });
+    }
+
+    /**
+     * Ongoing daily interest on any carried credit card balance, plus a small credit
+     * score hit for staying at high utilization — encourages paying the card down
+     * rather than just letting it ride.
+     */
+    private static int chargeCreditCardInterest() throws Exception {
+        double highUtilizationThreshold = AlsBanker.get().getConfig().getDouble("credit_card.high_utilization_threshold", 0.5);
+        int utilizationScoreLoss = AlsBanker.get().getConfig().getInt("credit.score_loss_high_utilization", 3);
+
+        return CreditCardDataService.applyDailyInterest((uuid, interest) -> {
+            try {
+                CreditCardDataService.Card card = CreditCardDataService.getCard(uuid);
+                double newBalance = card != null ? card.balance() : interest;
+                TransactionService.record(uuid, "CREDIT_CARD_INTEREST", interest, newBalance,
+                        "Daily credit card interest");
+
+                if (card != null && card.utilization() >= highUtilizationThreshold) {
+                    CreditScoreService.adjustScore(uuid, -utilizationScoreLoss);
+                }
+
+                notifyPlayer(uuid, LoanServicerMessages.creditCardInterest(interest));
+            } catch (Exception e) {
+                AlsBanker.get().getLogger().severe("Credit card interest post-processing failed: " + e.getMessage());
+            }
         });
     }
 
